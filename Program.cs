@@ -1,205 +1,173 @@
 ﻿using System.Diagnostics;
-using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 
-// ===== BÀI 2: RSA / PEM / SHA-256 / Chữ ký số =====
+// ===== BÀI 1: AES-256 (CBC + PKCS7), xử lý file theo stream nên chạy được file hàng GB =====
 Console.OutputEncoding = Encoding.UTF8;
 Console.InputEncoding = Encoding.UTF8;
 
-RSA? rsa = null;
+const int Buf = 1 << 20; // 1 MB
+byte[]? key = null;
 
 while (true)
 {
-    Console.WriteLine("\n===== RSA =====");
-    Console.WriteLine(" 1. Sinh cặp khoá");
-    Console.WriteLine(" 2. Xuất cặp khoá ra file PEM");
-    Console.WriteLine(" 3. Xem PEM + giải thích cấu trúc byte (ASN.1 DER)");
-    Console.WriteLine(" 4. Nhập PEM -> hiện n, e (public) / n, e, d, p, q... (private)");
-    Console.WriteLine(" 5. Mã hoá (public.pem, dữ liệu <= 190 byte) -> file base64");
-    Console.WriteLine(" 6. Giải mã (private.pem, file base64) + so sánh với nguồn");
-    Console.WriteLine(" 7. Đánh giá tốc độ: public key (e nhỏ) vs private key (d lớn)");
-    Console.WriteLine(" 8. SHA-256 + đánh giá hiệu ứng thác đổ (avalanche)");
-    Console.WriteLine(" 9. Chữ ký số: PKCS#1 v1.5 (tất định) vs PSS (ngẫu nhiên hoá)");
+    Console.WriteLine("\n===== AES =====");
+    Console.WriteLine(" 1. Sinh khoá AES (128/192/256 bit)");
+    Console.WriteLine(" 2. Lưu khoá ra file");
+    Console.WriteLine(" 3. Import khoá từ file");
+    Console.WriteLine(" 4. Mã hoá văn bản");
+    Console.WriteLine(" 5. Giải mã văn bản");
+    Console.WriteLine(" 6. Mã hoá file");
+    Console.WriteLine(" 7. Giải mã file");
+    Console.WriteLine(" 8. So sánh 2 file theo byte");
+    Console.WriteLine(" 9. Tạo file test dung lượng lớn");
+    Console.WriteLine("10. Benchmark trọn gói (mã hoá -> giải mã -> so sánh)");
     Console.WriteLine(" 0. Thoát");
+    string c = Ask("Chọn: ");
     try
     {
-        switch (Ask("Chọn: "))
+        switch (c)
         {
             case "1":
-                int bits = int.TryParse(Ask("Độ dài khoá [2048]: "), out var b) ? b : 2048;
-                rsa?.Dispose();
-                rsa = RSA.Create(bits);
-                Console.WriteLine($"Đã sinh khoá RSA {bits} bit.");
+                int bits = int.TryParse(Ask("Độ dài khoá (128/192/256) [256]: "), out var b) ? b : 256;
+                key = RandomNumberGenerator.GetBytes(bits / 8);
+                Console.WriteLine($"Khoá ({key.Length} byte, base64): {Convert.ToBase64String(key)}");
                 break;
             case "2":
-                if (rsa == null) throw new Exception("Chưa có khoá, chọn 1 trước.");
-                File.WriteAllText("public.pem", rsa.ExportSubjectPublicKeyInfoPem());   // "PUBLIC KEY"  (X.509 SPKI)
-                File.WriteAllText("private.pem", rsa.ExportRSAPrivateKeyPem());          // "RSA PRIVATE KEY" (PKCS#1)
-                Console.WriteLine("Đã ghi public.pem và private.pem vào thư mục hiện tại.");
+                NeedKey();
+                File.WriteAllText(Ask("Đường dẫn file lưu khoá: "), Convert.ToBase64String(key!));
+                Console.WriteLine("Đã lưu.");
                 break;
-            case "3": ViewPem(Ask("File PEM: ")); break;
-            case "4": ShowKey(Ask("File PEM: ")); break;
-            case "5": Encrypt(); break;
-            case "6": Decrypt(); break;
-            case "7": SpeedTest(); break;
-            case "8": HashDemo(); break;
-            case "9": SignDemo(); break;
+            case "3":
+                var k = Convert.FromBase64String(File.ReadAllText(Ask("Đường dẫn file khoá: ")).Trim());
+                if (k.Length is not (16 or 24 or 32)) throw new Exception("Khoá không hợp lệ (phải 16/24/32 byte).");
+                key = k;
+                Console.WriteLine($"Đã import khoá {k.Length * 8} bit.");
+                break;
+            case "4":
+                NeedKey();
+                Console.WriteLine("Bản mã (base64 của IV + ciphertext):\n" + EncryptText(Ask("Văn bản: ")));
+                break;
+            case "5":
+                NeedKey();
+                Console.WriteLine("Bản rõ: " + DecryptText(Ask("Bản mã base64: ")));
+                break;
+            case "6":
+                NeedKey();
+                string src = Ask("File nguồn: "), dst = Ask("File đích (đã mã hoá): ");
+                Console.WriteLine($"Thời gian mã hoá: {Time(() => EncryptFile(src, dst)):F3} s");
+                break;
+            case "7":
+                NeedKey();
+                string s2 = Ask("File đã mã hoá: "), d2 = Ask("File đích (giải mã): ");
+                Console.WriteLine($"Thời gian giải mã: {Time(() => DecryptFile(s2, d2)):F3} s");
+                break;
+            case "8":
+                Console.WriteLine(CompareFiles(Ask("File A: "), Ask("File B: ")) ? "GIỐNG NHAU từng byte." : "KHÁC NHAU.");
+                break;
+            case "9":
+                string tp = Ask("Đường dẫn file test: ");
+                long mb = long.Parse(Ask("Dung lượng (MB), vd 2048 = 2GB: "));
+                Console.WriteLine($"Tạo file mất {Time(() => GenTestFile(tp, mb)):F3} s");
+                break;
+            case "10":
+                NeedKey();
+                Benchmark(Ask("File nguồn: "));
+                break;
             case "0": return;
         }
     }
     catch (Exception ex) { Console.WriteLine("Lỗi: " + ex.Message); }
 }
 
+// ---------------- hàm hỗ trợ ----------------
 string Ask(string m) { Console.Write(m); return (Console.ReadLine() ?? "").Trim().Trim('"'); }
-string Hex(byte[] d) => Convert.ToHexString(d);
-string Short(byte[] d) => d.Length <= 24 ? Hex(d) : Hex(d[..12]) + "..." + Hex(d[^6..]) + $" ({d.Length} byte)";
+void NeedKey() { if (key == null) throw new Exception("Chưa có khoá. Hãy sinh (1) hoặc import (3) khoá."); }
+double Time(Action a) { var sw = Stopwatch.StartNew(); a(); sw.Stop(); return sw.Elapsed.TotalSeconds; }
 
-// ---------- 3. Xem PEM + dump ASN.1 ----------
-void ViewPem(string path)
+string EncryptText(string text)
 {
-    string pem = File.ReadAllText(path);
-    Console.WriteLine(pem);
-    string label = pem.Split('\n')[0].Trim();
-    Console.WriteLine($"Header: {label}  (PUBLIC KEY = X.509 SubjectPublicKeyInfo, RSA PRIVATE KEY = PKCS#1, PRIVATE KEY = PKCS#8)");
-    string body = string.Concat(pem.Split('\n').Where(l => !l.StartsWith("-----"))).Trim();
-    byte[] der = Convert.FromBase64String(body);
-    Console.WriteLine($"Base64 -> {der.Length} byte DER. Cấu trúc TLV (Tag-Length-Value):");
-    DumpAsn1(der, 0, der.Length, 0);
+    using var aes = Aes.Create();
+    aes.Key = key!; aes.GenerateIV();
+    byte[] ct = aes.EncryptCbc(Encoding.UTF8.GetBytes(text), aes.IV);
+    return Convert.ToBase64String(aes.IV.Concat(ct).ToArray());
 }
 
-void DumpAsn1(byte[] d, int p, int end, int depth)
+string DecryptText(string b64)
 {
-    while (p < end)
+    byte[] all = Convert.FromBase64String(b64);
+    using var aes = Aes.Create();
+    aes.Key = key!;
+    byte[] pt = aes.DecryptCbc(all.AsSpan(16), all.AsSpan(0, 16));
+    return Encoding.UTF8.GetString(pt);
+}
+
+void EncryptFile(string src, string dst)
+{
+    using var aes = Aes.Create();
+    aes.Key = key!; aes.GenerateIV();
+    using var fin = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.Read, Buf, FileOptions.SequentialScan);
+    using var fout = new FileStream(dst, FileMode.Create, FileAccess.Write, FileShare.None, Buf);
+    fout.Write(aes.IV);                                   // 16 byte đầu file = IV
+    using var cs = new CryptoStream(fout, aes.CreateEncryptor(), CryptoStreamMode.Write);
+    fin.CopyTo(cs, Buf);
+}
+
+void DecryptFile(string src, string dst)
+{
+    using var aes = Aes.Create();
+    aes.Key = key!;
+    using var fin = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.Read, Buf, FileOptions.SequentialScan);
+    byte[] iv = new byte[16];
+    fin.ReadExactly(iv);
+    using var fout = new FileStream(dst, FileMode.Create, FileAccess.Write, FileShare.None, Buf);
+    using var cs = new CryptoStream(fin, aes.CreateDecryptor(aes.Key, iv), CryptoStreamMode.Read);
+    cs.CopyTo(fout, Buf);
+}
+
+bool CompareFiles(string a, string b)
+{
+    using var fa = new FileStream(a, FileMode.Open, FileAccess.Read, FileShare.Read, Buf, FileOptions.SequentialScan);
+    using var fb = new FileStream(b, FileMode.Open, FileAccess.Read, FileShare.Read, Buf, FileOptions.SequentialScan);
+    Console.WriteLine($"Kích thước A = {fa.Length:N0} byte, B = {fb.Length:N0} byte");
+    if (fa.Length != fb.Length) return false;
+    byte[] ba = new byte[Buf], bb = new byte[Buf];
+    long offset = 0;
+    int n;
+    while ((n = fa.Read(ba, 0, Buf)) > 0)
     {
-        int start = p;
-        byte tag = d[p++];
-        int len = d[p++];
-        if ((len & 0x80) != 0) { int n = len & 0x7F; len = 0; for (int i = 0; i < n; i++) len = (len << 8) | d[p++]; }
-        string name = tag switch
+        fb.ReadExactly(bb, 0, n);
+        if (!ba.AsSpan(0, n).SequenceEqual(bb.AsSpan(0, n)))
         {
-            0x30 => "SEQUENCE", 0x02 => "INTEGER", 0x03 => "BIT STRING", 0x04 => "OCTET STRING",
-            0x05 => "NULL", 0x06 => "OBJECT IDENTIFIER", _ => $"tag 0x{tag:X2}"
-        };
-        string note = "";
-        if (tag == 0x02) note = " = " + Short(d[p..(p + len)]);
-        if (tag == 0x06) note = " = " + Hex(d[p..(p + len)]) + (Hex(d[p..(p + len)]) == "2A864886F70D010101" ? " (rsaEncryption 1.2.840.113549.1.1.1)" : "");
-        Console.WriteLine($"{new string(' ', depth * 2)}[offset {start}] {name} (0x{tag:X2}), length={len}{note}");
-        if (tag == 0x30 || tag == 0x04) DumpAsn1(d, p, p + len, depth + 1);
-        else if (tag == 0x03 && len > 1) DumpAsn1(d, p + 1, p + len, depth + 1); // bỏ byte "unused bits"
-        p += len;
+            int i = ba.AsSpan(0, n).CommonPrefixLength(bb.AsSpan(0, n));
+            Console.WriteLine($"Khác nhau đầu tiên tại byte {offset + i:N0}");
+            return false;
+        }
+        offset += n;
     }
-    if (depth == 0)
-        Console.WriteLine("\nPublic (SPKI): SEQ{ SEQ{OID rsaEncryption, NULL}, BIT STRING{ SEQ{ n, e } } }\n" +
-                          "Private (PKCS#1): SEQ{ version, n, e, d, p, q, d mod (p-1), d mod (q-1), q^-1 mod p }");
+    return true;
 }
 
-// ---------- 4. Nhập PEM ----------
-void ShowKey(string path)
+void GenTestFile(string path, long mb)
 {
-    using var r = RSA.Create();
-    r.ImportFromPem(File.ReadAllText(path));
-    RSAParameters pr; bool priv = true;
-    try { pr = r.ExportParameters(true); } catch { pr = r.ExportParameters(false); priv = false; }
-    Console.WriteLine(priv ? "== PRIVATE KEY ==" : "== PUBLIC KEY ==");
-    Console.WriteLine($"n ({pr.Modulus!.Length * 8} bit) = {Hex(pr.Modulus)}");
-    Console.WriteLine($"e = {new BigInteger(pr.Exponent!, true, true)}  (hex {Hex(pr.Exponent!)})");
-    if (priv)
-    {
-        Console.WriteLine($"d  ({pr.D!.Length * 8} bit) = {Hex(pr.D)}");
-        Console.WriteLine($"p  = {Hex(pr.P!)}\nq  = {Hex(pr.Q!)}");
-        Console.WriteLine($"dp = {Hex(pr.DP!)}\ndq = {Hex(pr.DQ!)}\nqinv = {Hex(pr.InverseQ!)}");
-    }
+    using var f = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, Buf);
+    byte[] buf = new byte[Buf];
+    for (long i = 0; i < mb; i++) { RandomNumberGenerator.Fill(buf); f.Write(buf); }
 }
 
-// ---------- 5. Mã hoá ----------
-// OAEP-SHA256: tối đa k - 2*32 - 2 = 256 - 66 = 190 byte với RSA-2048 (đúng với đề: khoá AES 32 byte nằm trong giới hạn).
-void Encrypt()
+void Benchmark(string src)
 {
-    using var r = RSA.Create();
-    r.ImportFromPem(File.ReadAllText(Ask("File public.pem: ")));
-    string input = Ask("Dữ liệu (base64, vd khoá AES 32 byte) hoặc đường dẫn file chứa base64: ");
-    if (File.Exists(input)) input = File.ReadAllText(input).Trim();
-    byte[] data = Convert.FromBase64String(input);
-    int max = r.KeySize / 8 - 66;
-    if (data.Length > max) throw new Exception($"Dữ liệu {data.Length} byte > tối đa {max} byte.");
-    string outB64 = Convert.ToBase64String(r.Encrypt(data, RSAEncryptionPadding.OaepSHA256));
-    string outPath = Ask("File lưu bản mã: ");
-    File.WriteAllText(outPath, outB64);
-    Console.WriteLine($"Đã mã hoá {data.Length} byte -> {outB64}");
-}
-
-// ---------- 6. Giải mã ----------
-void Decrypt()
-{
-    using var r = RSA.Create();
-    r.ImportFromPem(File.ReadAllText(Ask("File private.pem: ")));
-    byte[] plain = r.Decrypt(Convert.FromBase64String(File.ReadAllText(Ask("File bản mã (base64): ")).Trim()),
-                             RSAEncryptionPadding.OaepSHA256);
-    string got = Convert.ToBase64String(plain);
-    Console.WriteLine($"Kết quả giải mã (base64): {got}");
-    string orig = Ask("Dữ liệu gốc (base64 hoặc đường dẫn file) để so sánh [Enter = bỏ qua]: ");
-    if (orig != "")
-    {
-        if (File.Exists(orig)) orig = File.ReadAllText(orig).Trim();
-        Console.WriteLine(Convert.FromBase64String(orig).AsSpan().SequenceEqual(plain) ? "=> TRÙNG KHỚP với dữ liệu gốc." : "=> KHÁC dữ liệu gốc!");
-    }
-}
-
-// ---------- 7. Tốc độ ----------
-void SpeedTest()
-{
-    foreach (int bits in new[] { 1024, 2048, 3072, 4096 })
-    {
-        using var full = RSA.Create(bits);
-        using var pub = RSA.Create();
-        pub.ImportParameters(full.ExportParameters(false));        // chỉ có n, e
-        byte[] data = RandomNumberGenerator.GetBytes(32);
-        byte[] ct = pub.Encrypt(data, RSAEncryptionPadding.OaepSHA256);
-        full.Decrypt(ct, RSAEncryptionPadding.OaepSHA256);          // khởi động
-
-        int nPub = 2000, nPriv = 200;
-        var sw = Stopwatch.StartNew();
-        for (int i = 0; i < nPub; i++) pub.Encrypt(data, RSAEncryptionPadding.OaepSHA256);
-        double tPub = sw.Elapsed.TotalMilliseconds / nPub;
-        sw.Restart();
-        for (int i = 0; i < nPriv; i++) full.Decrypt(ct, RSAEncryptionPadding.OaepSHA256);
-        double tPriv = sw.Elapsed.TotalMilliseconds / nPriv;
-
-        var pr = full.ExportParameters(true);
-        Console.WriteLine($"RSA-{bits}: e = {new BigInteger(pr.Exponent!, true, true)} ({new BigInteger(pr.Exponent!, true, true).GetBitLength()} bit), d = {pr.D!.Length * 8} bit" +
-                          $" | Mã hoá (public): {tPub:F4} ms | Giải mã (private): {tPriv:F4} ms | private chậm gấp {tPriv / tPub:F1} lần");
-    }
-}
-
-// ---------- 8. SHA-256 ----------
-void HashDemo()
-{
-    string a = Ask("Chuỗi 1: "), b = Ask("Chuỗi 2 (sửa rất ít, vd đổi 1 ký tự): ");
-    byte[] ha = SHA256.HashData(Encoding.UTF8.GetBytes(a)), hb = SHA256.HashData(Encoding.UTF8.GetBytes(b));
-    Console.WriteLine($"SHA256(1) = {Hex(ha)}\nSHA256(2) = {Hex(hb)}");
-    int diff = ha.Zip(hb, (x, y) => BitOperations_PopCount((byte)(x ^ y))).Sum();
-    Console.WriteLine($"Số bit khác nhau: {diff}/256 = {diff / 2.56:F1}%  (lý thuyết ≈ 50% => hiệu ứng thác đổ)");
-}
-int BitOperations_PopCount(byte x) => System.Numerics.BitOperations.PopCount(x);
-
-// ---------- 9. Chữ ký số ----------
-void SignDemo()
-{
-    using var r = RSA.Create(2048);
-    byte[] data = Encoding.UTF8.GetBytes(Ask("Dữ liệu cần ký: "));
-
-    Console.WriteLine("\n-- PKCS#1 v1.5: ký 3 lần cùng dữ liệu, cùng khoá --");
-    for (int i = 0; i < 3; i++)
-    {
-        byte[] s = r.SignData(data, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        Console.WriteLine($"  lần {i + 1}: {Convert.ToBase64String(s)[..48]}...  verify={r.VerifyData(data, s, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)}");
-    }
-    Console.WriteLine("-- RSASSA-PSS (salt ngẫu nhiên): ký 3 lần cùng dữ liệu, cùng khoá --");
-    for (int i = 0; i < 3; i++)
-    {
-        byte[] s = r.SignData(data, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
-        Console.WriteLine($"  lần {i + 1}: {Convert.ToBase64String(s)[..48]}...  verify={r.VerifyData(data, s, HashAlgorithmName.SHA256, RSASignaturePadding.Pss)}");
-    }
-    Console.WriteLine("=> PKCS#1 v1.5 cho chữ ký GIỐNG nhau; PSS cho chữ ký KHÁC nhau mỗi lần nhưng đều xác thực đúng.");
+    string enc = src + ".enc", dec = src + ".dec";
+    double mbSize = new FileInfo(src).Length / 1024.0 / 1024.0;
+    double tE = Time(() => EncryptFile(src, enc));
+    double tD = Time(() => DecryptFile(enc, dec));
+    bool same = false;
+    double tC = Time(() => same = CompareFiles(src, dec));
+    Console.WriteLine("\n--- KẾT QUẢ ---");
+    Console.WriteLine($"Kích thước nguồn : {mbSize:N1} MB");
+    Console.WriteLine($"Kích thước mã hoá: {new FileInfo(enc).Length / 1024.0 / 1024.0:N1} MB (= nguồn + padding + 16 byte IV)");
+    Console.WriteLine($"Mã hoá : {tE:F3} s  ({mbSize / tE:F1} MB/s)");
+    Console.WriteLine($"Giải mã: {tD:F3} s  ({mbSize / tD:F1} MB/s)");
+    Console.WriteLine($"So sánh: {tC:F3} s -> {(same ? "GIỐNG NHAU 100%" : "KHÁC NHAU")}");
+    Console.WriteLine($"AES-NI phần cứng: {(System.Runtime.Intrinsics.X86.Aes.IsSupported || System.Runtime.Intrinsics.Arm.Aes.IsSupported ? "có" : "không")}");
 }
