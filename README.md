@@ -56,6 +56,7 @@ Sinh cặp khoá RSA-2048, xuất ra public.pem và private.pem. Chức năng Xe
 5. Nhập PEM, đọc các thành phần của khoá
 
 
+<img width="1920" height="1080" alt="05-rsa-import-pem" src="https://github.com/user-attachments/assets/054230b2-d556-46d3-ad23-f689fcef2210" />
 
 
 
@@ -69,6 +70,7 @@ Các khoá trong ảnh chỉ là khoá thử nghiệm, không dùng cho mục đ
 
 RSA mã hoá giải mã
 
+<img width="1920" height="1080" alt="Screenshot 2026-10-23 121524" src="https://github.com/user-attachments/assets/c98f6cbc-b56e-4dfb-9abb-86dec0c67ed9" />
 
 
 
@@ -111,6 +113,7 @@ SHA-256
 SHA-256
 
 
+<img width="1920" height="1080" alt="Screenshot 2026-10-24 102207" src="https://github.com/user-attachments/assets/43ae22a7-93bb-45a4-bcd0-0d930610b3f4" />
 
 
 Nhập hai chuỗi chỉ khác nhau rất ít (Hello world và Hello worle), chương trình tự tính SHA-256 của cả hai và đếm số bit băm khác nhau: 142/256 bit (55,5%). Lý thuyết là khoảng 50%, tức chỉ cần đổi đầu vào rất ít thì băm đổi gần như hoàn toàn (hiệu ứng thác đổ).
@@ -123,6 +126,7 @@ Chữ ký số là RSA dùng khoá bí mật trên giá trị băm của dữ li
 
 Chữ ký số
 
+<img width="1920" height="1080" alt="Screenshot 2026-10-24 102415" src="https://github.com/user-attachments/assets/02b1c265-2f7a-43b3-b825-85e3d713c68e" />
 
 
 
