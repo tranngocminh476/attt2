@@ -33,10 +33,11 @@ AES benchmark 1 GB
 
 Tạo file test 1024 MB (1.073.741.824 byte), sau đó chạy benchmark trọn gói gồm mã hoá, giải mã và so sánh byte giữa file nguồn với file sau giải mã.
 
-Chỉ số	Kết quả
-Mã hoá	1,127 s (908,7 MB/s)
-Giải mã	0,687 s (1489,8 MB/s)
-So sánh byte	0,655 s, giống nhau 100% (cả hai file đều 1.073.741.824 byte)
+| Chỉ số	Kết quả |
+| --- |
+| Mã hoá	1,127 s (908,7 MB/s) |
+| Giải mã	0,687 s (1489,8 MB/s) |
+| So sánh byte	0,655 s, giống nhau 100% (cả hai file đều 1.073.741.824 byte) |
 
 Nhận xét: thuật toán đúng (file giải mã trùng khớp từng byte với file gốc). Tốc độ đạt hàng trăm đến hàng nghìn MB/s nhờ AES phần cứng, giải mã nhanh hơn mã hoá vì CBC giải mã có thể song song hoá.
 
@@ -54,6 +55,10 @@ Sinh cặp khoá RSA-2048, xuất ra public.pem và private.pem. Chức năng Xe
 
 5. Nhập PEM, đọc các thành phần của khoá
 
+
+
+
+
 RSA nhập PEM
 
 Phần cuối cấu trúc khoá riêng PKCS#1 (d, p, q, dP, dQ, qInv) và kết quả nhập PEM: file public cho ra n (2048 bit) và e = 65537; file private cho ra thêm d, p, q, dP, dQ, qInv.
@@ -64,17 +69,24 @@ Các khoá trong ảnh chỉ là khoá thử nghiệm, không dùng cho mục đ
 
 RSA mã hoá giải mã
 
+
+
+
 Mã hoá chuỗi base64 của một khoá 32 byte bằng public.pem, lưu bản mã ra file (base64), rồi giải mã bằng private.pem. Kết quả giải mã trùng khớp với dữ liệu gốc.
 
 7. Kiểm tra giới hạn dữ liệu 190 byte
 
 RSA giới hạn 190 byte
 
+<img width="1920" height="1080" alt="Screenshot 2026-10-24 100036" src="https://github.com/user-attachments/assets/33c07d86-f13b-4e48-a2d1-2a7dc985b6c2" />
+
 Với dữ liệu 191 byte, chương trình báo lỗi "Dữ liệu 191 byte > tối đa 190 byte (OAEP-SHA256)". Đây là giới hạn của RSA-2048 với OAEP-SHA256: 256 - 2×32 - 2 = 190 byte.
 
 8. Xuất cặp khoá ra thư mục riêng và mã hoá, giải mã lại
 
 RSA khoá trong thư mục riêng
+<img width="1920" height="1080" alt="Screenshot 2026-10-24 101143" src="https://github.com/user-attachments/assets/05b4c2b7-5fc0-40bc-8417-09f3260cb1bb" />
+
 
 Cặp khoá được xuất vào thư mục riêng khóa A. Mã hoá 32 byte bằng public key trong thư mục này rồi giải mã bằng private key cùng cặp, cho kết quả trùng khớp với dữ liệu gốc.
 
@@ -82,11 +94,14 @@ Cặp khoá được xuất vào thư mục riêng khóa A. Mã hoá 32 byte b�
 
 RSA tốc độ
 
-Độ dài khoá	Mã hoá (public)	Giải mã (private)	Private chậm hơn
-1024 bit	0,0060 ms	0,1081 ms	18,1 lần
-2048 bit	0,0208 ms	0,6262 ms	30,1 lần
-3072 bit	0,0413 ms	1,9257 ms	46,6 lần
-4096 bit	0,0684 ms	4,2478 ms	62,1 lần
+<img width="1920" height="1080" alt="Screenshot 2026-10-24 101430" src="https://github.com/user-attachments/assets/b082178e-6efa-4e0b-8d2d-97dc275cfe01" />
+
+| Độ dài khoá	Mã hoá (public)	Giải mã (private)	Private chậm hơn |
+| --- |
+| 1024 bit	0,0060 ms	0,1081 ms	18,1 lần |
+| 2048 bit	0,0208 ms	0,6262 ms	30,1 lần |
+| 3072 bit	0,0413 ms	1,9257 ms	46,6 lần |
+| 4096 bit	0,0684 ms	4,2478 ms	62,1 lần |
 
 Nhận xét: mã hoá bằng public key (e = 65537 chỉ khoảng 17 bit) nhanh hơn giải mã bằng private key (d dài cỡ bằng n) hàng chục lần, và khoảng cách càng tăng khi khoá dài hơn. Vì vậy RSA chỉ dùng cho dữ liệu nhỏ (khoá AES, giá trị băm), còn dữ liệu lớn được mã hoá bằng AES.
 
@@ -94,6 +109,9 @@ SHA-256
 10. Hiệu ứng thác đổ của hàm băm
 
 SHA-256
+
+
+
 
 Nhập hai chuỗi chỉ khác nhau rất ít (Hello world và Hello worle), chương trình tự tính SHA-256 của cả hai và đếm số bit băm khác nhau: 142/256 bit (55,5%). Lý thuyết là khoảng 50%, tức chỉ cần đổi đầu vào rất ít thì băm đổi gần như hoàn toàn (hiệu ứng thác đổ).
 
@@ -104,6 +122,9 @@ Chữ ký số là RSA dùng khoá bí mật trên giá trị băm của dữ li
 11. Cùng dữ liệu, cùng khoá nhưng chữ ký khác nhau
 
 Chữ ký số
+
+
+
 
 Ký 3 lần cùng dữ liệu hợp đồng 001 bằng cùng một private key:
 
